@@ -1,0 +1,655 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Anadolu BiyoMiras Atlası</title>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+
+<style>
+:root {
+  --wine: #520d25;
+  --gold: #eac45b;
+  --cream: #fff9e9;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: system-ui, Arial, sans-serif;
+  background: var(--wine);
+  color: var(--cream);
+}
+header {
+  min-height: 76px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 15px;
+  padding: 12px 24px;
+  background: #41091d;
+  border-bottom: 2px solid var(--gold);
+}
+h1 {
+  font-size: clamp(17px, 2vw, 25px);
+  margin: 0;
+  color: var(--gold);
+}
+small { color: #e9d7c1; }
+.controls {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+input, select, button {
+  padding: 11px;
+  border-radius: 8px;
+  border: 1px solid #cfa75a;
+  font: inherit;
+}
+input { min-width: 180px; }
+button {
+  background: var(--gold);
+  color: #3a1020;
+  cursor: pointer;
+  font-weight: 700;
+}
+button:hover { filter: brightness(1.08); }
+.app {
+  display: flex;
+  height: calc(100dvh - 76px);
+}
+aside {
+  width: 42%;
+  max-width: 560px;
+  overflow: auto;
+  background: #4a1027;
+  border-right: 2px solid var(--gold);
+  padding: 24px;
+  flex-shrink: 0;
+}
+aside.hidden { display: none; }
+#map {
+  flex: 1;
+  min-width: 0;
+  background: #f1e7ce;
+}
+h2 {
+  color: var(--gold);
+  margin: 10px 0;
+}
+.status {
+  display: inline-block;
+  border: 1px solid var(--gold);
+  padding: 6px 10px;
+  border-radius: 20px;
+  color: var(--gold);
+}
+.model {
+  height: 260px;
+  border: 1px dashed #b58c64;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  text-align: center;
+  margin: 16px 0;
+  padding: 20px;
+  background: #381020;
+}
+.meta { line-height: 1.65; }
+.note {
+  font-size: 13px;
+  color: #e7cdb5;
+}
+.sources a {
+  color: #ffe08b;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.sources li { margin: 8px 0; }
+.close { float: right; }
+.legend {
+  position: absolute;
+  bottom: 20px;
+  right: 14px;
+  z-index: 500;
+  background: #fffdf3;
+  color: #331520;
+  border-radius: 8px;
+  padding: 10px;
+  box-shadow: 0 2px 10px #0003;
+  font-size: 12px;
+}
+.dot {
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  margin-right: 5px;
+}
+.leaflet-container {
+  font: inherit;
+  background: #f1e7ce !important;
+}
+@media (max-width: 760px) {
+  header {
+    height: auto;
+    min-height: 100px;
+    align-items: flex-start;
+    flex-direction: column;
+    padding: 12px;
+  }
+  .app { height: calc(100dvh - 122px); }
+  aside { width: 55%; padding: 12px; }
+  .controls { width: 100%; }
+  input { min-width: 100px; width: 48%; }
+  select { max-width: 45%; }
+  .model { height: 180px; }
+}
+@media (max-width: 480px) {
+  .app { position: relative; }
+  aside {
+    position: absolute;
+    z-index: 600;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 88%;
+    box-shadow: 4px 0 20px #0006;
+  }
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>ANADOLU | BiyoMiras Atlası</h1>
+    <small>Nesli tükenmiş, tehdit altındaki ve endemik türlerin coğrafi atlası</small>
+  </div>
+  <div class="controls">
+    <select id="filter" aria-label="Tür filtresi">
+      <option value="all">Tüm türler</option>
+      <option value="animal">Hayvanlar</option>
+      <option value="plant">Bitkiler</option>
+    </select>
+    <input id="search" placeholder="Tür ara..." aria-label="Tür ara">
+    <button id="searchBtn">Ara</button>
+    <button id="panelBtn">Bilgi paneli</button>
+  </div>
+</header>
+
+<div class="app">
+  <aside id="panel" class="hidden">
+    <button class="close" id="closeBtn">✕ Kapat</button>
+    <div id="details">
+      <h2>Bir tür seçin</h2>
+    </div>
+  </aside>
+  <div id="map"></div>
+</div>
+
+<div class="legend">
+  <strong>Türkiye · WGS84</strong>
+  <hr>
+  <div><i class="dot" style="background:#d62828"></i>Coğrafi konum</div>
+  <div><i class="dot" style="background:#f0c419"></i>Seçili</div>
+  <div><i class="dot" style="background:#ff8c21"></i>Arama sonucu</div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+
+// Noktalar yaklaşık bölgesel konumlar bunlar
+// Kesin gözlem koordinatları değil
+
+const species = [
+  {
+    id: "leopard",
+    name: "Anadolu parsı",
+    latin: "Panthera pardus tulliana",
+    type: "animal",
+    category: "threatened",
+    status: "Türkiye'de varlığı belgelenmiş; nesli tükenmiş değil",
+    regions: [
+      "Gündoğmuş, Antalya",
+      "Kaş, Antalya",
+      "Eruh, Siirt"
+    ],
+    points: [[36.82,32.00],[36.20,29.64],[37.75,42.18]],
+    description: "Türkiye'deki tarihsel ve yeni pars kayıtları üzerine yayımlanmış araştırmada bu bölgeler anılır. İşaretler yaklaşık bölge merkezidir.",
+    sources: [
+      ["Hakemli araştırma: New records of the Anatolian leopard",
+       "https://www.tandfonline.com/doi/full/10.1080/24750263.2022.2105963"]
+    ]
+  },
+  {
+    id: "tiger",
+    name: "Hazar kaplanı",
+    latin: "Panthera tigris virgata",
+    type: "animal",
+    category: "extinct",
+    status: "Soyu tükenmiş tarihsel kaplan popülasyonu",
+    regions: ["Doğu Anadolu — geniş tarihsel bölge"],
+    points: [[39.20,43.20]],
+    description: "Hazar kaplanının tarihsel yayılışı Türkiye'nin doğusuyla ilişkilendirilmiştir. İşaret kesin gözlem noktası değildir.",
+    sources: [
+      ["Hazar kaplanı tarihsel yayılış bilgisi",
+       "https://en.wikipedia.org/wiki/Caspian_tiger"]
+    ]
+  },
+  {
+    id: "deer",
+    name: "Alageyik",
+    latin: "Dama dama",
+    type: "animal",
+    category: "threatened",
+    status: "Türkiye'de yaşayan, koruma çalışmaları yürütülen tür",
+    regions: ["Düzlerçamı, Antalya"],
+    points: [[37.10,30.55]],
+    description: "Alageyik Türkiye'de tamamen yok olmuş değildir. Antalya çevresinde koruma çalışmaları yürütülmektedir.",
+    sources: [
+      ["IUCN — Dama dama",
+       "https://www.iucnredlist.org/search?query=Dama%20dama&searchType=species"]
+    ]
+  },
+  {
+    id: "centaurea",
+    name: "Yanardöner (Sevgi çiçeği)",
+    latin: "Centaurea tchihatcheffii",
+    type: "plant",
+    category: "endemic",
+    status: "Endemik; çok tehlikede (CR)",
+    regions: ["Gölbaşı, Ankara","Gölbek çevresi, Ankara"],
+    points: [[39.79,32.81],[39.49,32.79]],
+    description: "Ankara çevresinde sınırlı yayılışlı endemik bitki. Hassas habitat koordinatları gösterilmemektedir.",
+    sources: [
+      ["ÇŞİDB — Sevgi Çiçeği Tür İzleme Projesi",
+       "https://tvk.csb.gov.tr/sevgi-cicegi-tur-izleme-projesi-i-84116"],
+      ["Kew — Takson kaydı",
+       "https://powo.science.kew.org/taxon/191753-1"]
+    ]
+  },
+  {
+    id: "thermopsis",
+    name: "Eber sarısı",
+    latin: "Thermopsis turcica",
+    type: "plant",
+    category: "endemic",
+    status: "Endemik; nesli tehlikede",
+    regions: ["Eber Gölü, Afyonkarahisar","Akşehir Gölü çevresi"],
+    points: [[38.38,31.14],[38.32,31.35]],
+    description: "Eber ve Akşehir gölleri çevresinde dar yayılışlı endemik bitki türü.",
+    sources: [
+      ["Tarım ve Orman Bakanlığı — İzleme çalışmaları",
+       "https://bolge5.tarimorman.gov.tr/Haber/771/Eber-Sarisi-Izleme-Calismalari-Devam-Ediyor"]
+    ]
+  },
+  {
+    id: "ibis",
+    name: "Kelaynak",
+    latin: "Geronticus eremita",
+    type: "animal",
+    category: "threatened",
+    status: "Tehdit altındaki kuş türü",
+    regions: ["Birecik, Şanlıurfa"],
+    points: [[37.03,37.98]],
+    description: "Birecik ile özdeşleşmiş kelaynak, koruma ve üretme programlarıyla desteklenmektedir.",
+    sources: [
+      ["IUCN — Geronticus eremita",
+       "https://www.iucnredlist.org/search?query=Geronticus%20eremita&searchType=species"]
+    ]
+  },
+  {
+    id: "tulip",
+    name: "Ters lale",
+    latin: "Fritillaria imperialis",
+    type: "plant",
+    category: "threatened",
+    status: "Türkiye'de doğal olarak bulunan; Türkiye endemiği olmayan bitki",
+    regions: ["Hakkâri çevresi"],
+    points: [[37.57,43.74]],
+    description: "Ters lale Türkiye'de de doğal olarak yetişir, ancak yalnızca Türkiye'ye özgü değildir.",
+    sources: [
+      ["Kew — Fritillaria imperialis",
+       "https://powo.science.kew.org/results?q=Fritillaria%20imperialis"]
+    ]
+  },
+  {
+    id: "kazdagi",
+    name: "Kazdağı göknarı",
+    latin: "Abies nordmanniana subsp. equi-trojani",
+    type: "plant",
+    category: "endemic",
+    status: "Türkiye'ye özgü dar yayılışlı göknar taksonu",
+    regions: ["Kazdağları, Balıkesir/Çanakkale"],
+    points: [[39.70,26.85]],
+    description: "Kazdağları çevresiyle ilişkili endemik göknar taksonu.",
+    sources: [
+      ["Kew — Takson araması",
+       "https://powo.science.kew.org/results?q=Abies%20equi-trojani"]
+    ]
+  },
+  {
+    id: "sigla",
+    name: "Anadolu sığla ağacı",
+    latin: "Liquidambar orientalis",
+    type: "plant",
+    category: "endemic",
+    status: "Güneybatı Anadolu'ya özgü, korunması gereken ağaç",
+    regions: ["Köyceğiz, Muğla"],
+    points: [[36.98,28.69]],
+    description: "Köyceğiz çevresindeki sığla ormanlarının yaklaşık konumu gösterilmektedir.",
+    sources: [
+      ["Kew — Liquidambar orientalis",
+       "https://powo.science.kew.org/results?q=Liquidambar%20orientalis"]
+    ]
+  },
+  {
+    id: "viper",
+    name: "Wagner engereği",
+    latin: "Montivipera wagneri",
+    type: "animal",
+    category: "threatened",
+    status: "Dar yayılışlı, tehdit altındaki engerek",
+    regions: ["Doğu Anadolu — genel bölge"],
+    points: [[39.75,43.45]],
+    description: "Hassas habitatları korumak için kesin konum gösterilmemektedir.",
+    sources: [
+      ["IUCN — Montivipera wagneri",
+       "https://www.iucnredlist.org/search?query=Montivipera%20wagneri&searchType=species"]
+    ]
+  },
+  {
+    id: "gazelle",
+    name: "Hatay dağ ceylanı",
+    latin: "Gazella gazella",
+    type: "animal",
+    category: "threatened",
+    status: "Türkiye'de koruma çalışmaları yürütülen popülasyon",
+    regions: ["Kırıkhan, Hatay"],
+    points: [[36.50,36.35]],
+    description: "Hatay bölgesindeki dağ ceylanı popülasyonunun genel bölgesi gösterilmektedir.",
+    sources: [
+      ["IUCN — Gazella gazella",
+       "https://www.iucnredlist.org/search?query=Gazella%20gazella&searchType=species"]
+    ]
+  },
+  {
+    id: "salmon",
+    name: "Van Gölü inci kefali",
+    latin: "Alburnus tarichi",
+    type: "animal",
+    category: "endemic",
+    status: "Van Gölü havzasına endemik balık",
+    regions: ["Van Gölü havzası"],
+    points: [[38.58,43.02]],
+    description: "Van Gölü havzasıyla sınırlı yayılışlı balık türü.",
+    sources: [
+      ["FishBase — Alburnus tarichi",
+       "https://www.fishbase.se/summary/Alburnus-tarichi.html"]
+    ]
+  }
+  //Daha fazla tür eklemek istersek buraya
+];
+
+// HARİTA
+const map = L.map("map", {
+  zoomControl: true
+}).setView([39,35],6);
+
+const base = L.tileLayer(
+  "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+  {
+    attribution: "© OpenStreetMap contributors",
+    maxZoom: 19,
+    crossOrigin: true
+  }
+).addTo(map);
+
+// Harita altlığı yüklenemezse uyarı
+let tileErrors = 0;
+let noticeShown = false;
+
+const mapNotice = L.control({position:"bottomleft"});
+mapNotice.onAdd = function() {
+  const el = L.DomUtil.create("div");
+  el.style.cssText =
+    "background:#fff9e9;color:#520d25;padding:8px 12px;" +
+    "border:1px solid #520d25;border-radius:8px;" +
+    "max-width:290px;font:13px system-ui;" +
+    "box-shadow:0 2px 10px #0003";
+  el.textContent =
+    "Harita altlığı yüklenemedi. İnternet bağlantısını " +
+    "veya harita sunucusuna erişimi kontrol edin.";
+  return el;
+};
+
+base.on("tileerror", () => {
+  tileErrors++;
+  if (tileErrors >= 5 && !noticeShown) {
+    noticeShown = true;
+    mapNotice.addTo(map);
+  }
+});
+
+base.on("tileload", () => {
+  if (noticeShown) {
+    map.removeControl(mapNotice);
+    noticeShown = false;
+    tileErrors = 0;
+  }
+});
+
+// Yaklaşık Türkiye silueti resmî sınır verisi değil buraya koymamız lazım!!!
+//const outline = [
+//  [41.73,26.04],[41.99,26.55],[41.71,27.47],
+//  [41.98,28.97],[41.29,29.92],[41.15,31.02],
+//  [41.74,32.13],[41.88,33.47],[42.06,34.86],
+//  [41.64,35.48],[41.25,36.41],[41.57,37.45],
+//  [41.95,38.22],[41.55,39.32],[41.92,40.77],
+//  [41.50,41.53],[41.49,42.58],[41.11,43.37],
+//  [39.71,44.79],[38.40,44.31],[37.15,43.43],
+//  [37.00,42.13],[37.15,40.99],[36.68,39.15],
+//  [36.69,37.78],[36.53,36.21],[36.00,35.98],
+//  [36.17,35.56],[36.61,34.51],[36.77,33.37],
+//  [36.27,32.13],[36.59,30.88],[36.67,29.42],
+//  [36.27,28.17],[36.75,27.38],[37.06,27.25],
+//  [37.49,27.20],[38.22,26.31],[38.68,26.56],
+//  [39.32,26.61],[40.03,26.16],[40.72,25.99],
+//  [40.96,26.36],[41.73,26.04]
+//];
+
+L.polygon(outline, {
+  color: "#78142e",
+  weight: 3,
+  fillColor: "#eac45b",
+  fillOpacity: 0.12,
+  interactive: false
+}).addTo(map);
+
+// PANEL VE İŞARETLER
+const panel = document.getElementById("panel");
+const details = document.getElementById("details");
+const search = document.getElementById("search");
+const filter = document.getElementById("filter");
+
+let selected = null;
+let matched = new Set();
+let markers = [];
+
+function normalize(s) {
+  return s.toLocaleLowerCase("tr-TR")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g,"")
+    .replace(/ı/g,"i");
+}
+
+function openPanel() {
+  panel.classList.remove("hidden");
+  setTimeout(() => map.invalidateSize(), 120);
+}
+
+function closePanel() {
+  panel.classList.add("hidden");
+  selected = null;
+  matched.clear();
+  render();
+  setTimeout(() => map.invalidateSize(), 120);
+}
+
+function choose(s) {
+  selected = s.id;
+  openPanel();
+
+  const sources = s.sources.map(([label,url]) =>
+    `<li><a href="${url}" target="_blank" rel="noopener noreferrer">${label} ↗</a></li>`
+  ).join("");
+
+  details.innerHTML = `
+    <h2>${s.name}</h2>
+    <p><em>${s.latin}</em></p>
+    <p class="status">${s.status}</p>
+
+    <div class="model">
+      <div>
+        <strong>3D model alanı</strong>
+        <p>Doğrulanmış, lisanslı GLB model eklendiğinde
+        burada döndürülerek incelenebilecek.</p>
+      </div>
+    </div>
+
+    <div class="meta">
+      <b>Grup:</b> ${s.type === "animal" ? "Hayvan" : "Bitki"}<br>
+      <b>Haritada gösterilen bölge:</b> ${s.regions.join(", ")}
+      <p>${s.description}</p>
+    </div>
+
+    <h3 style="color:var(--gold)">Kaynaklar ve orijinal bağlantılar</h3>
+    <ul class="sources">${sources}</ul>
+
+    <p class="note">
+      ⚑ Haritadaki koordinatlar WGS84 sistemindedir;
+      yaklaşık bölgesel işaretlerdir. Doğrulanmış
+      gözlem noktaları olarak kullanılmamalıdır.
+    </p>
+  `;
+
+  render();
+}
+
+function render() {
+  markers.forEach(m => map.removeLayer(m));
+  markers = [];
+
+  const f = filter.value;
+
+  species
+    .filter(s => f === "all" || s.type === f)
+    .forEach(s => {
+      s.points.forEach((p,i) => {
+        const color =
+          selected === s.id ? "#f0c419" :
+          matched.has(s.id) ? "#ff8c21" :
+          "#d62828";
+
+        const marker = L.circleMarker(p, {
+          radius: 9,
+          color: "#fff",
+          weight: 2,
+          fillColor: color,
+          fillOpacity: 0.95
+        }).addTo(map);
+
+        marker.bindTooltip(
+          s.name + " — " +
+          s.regions[Math.min(i,s.regions.length-1)]
+        );
+
+        marker.on("click", () => choose(s));
+        markers.push(marker);
+      });
+    });
+}
+
+function doSearch() {
+  const q = normalize(search.value.trim());
+
+  matched = new Set(
+    q ? species
+      .filter(s => normalize(s.name + " " + s.latin).includes(q))
+      .map(s => s.id) : []
+  );
+
+  const found = species.find(s =>
+    matched.has(s.id) &&
+    (filter.value === "all" || filter.value === s.type)
+  );
+
+  if (found) {
+    choose(found);
+
+    const pts = species
+      .filter(s => matched.has(s.id))
+      .flatMap(s => s.points);
+
+    map.fitBounds(L.latLngBounds(pts).pad(0.35), {
+      maxZoom: 8
+    });
+  } else {
+    selected = null;
+
+    if (q) {
+      openPanel();
+      details.innerHTML =
+        "<h2>Sonuç bulunamadı</h2>" +
+        "<p>Başka bir tür adı deneyin.</p>";
+    }
+
+    render();
+  }
+}
+
+// BUTONLAR
+document.getElementById("searchBtn").onclick = doSearch;
+
+search.addEventListener("keydown", e => {
+  if (e.key === "Enter") doSearch();
+});
+
+search.addEventListener("input", () => {
+  if (!search.value.trim()) {
+    matched.clear();
+    render();
+  }
+});
+
+filter.onchange = () => render();
+
+document.getElementById("panelBtn").onclick = () => {
+  if (panel.classList.contains("hidden")) {
+    if (selected) {
+      openPanel();
+    } else {
+      details.innerHTML =
+        "<h2>Bir tür seçin</h2>" +
+        "<p>Haritadaki noktalardan birine tıklayın.</p>";
+      openPanel();
+    }
+  } else {
+    closePanel();
+  }
+};
+
+document.getElementById("closeBtn").onclick = closePanel;
+
+render();
+
+map.fitBounds(
+  [[35.7,25.6],[42.2,44.9]],
+  {padding:[15,15]}
+);
+
+</script>
+</body>
+</html>
